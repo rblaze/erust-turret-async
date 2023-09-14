@@ -1,0 +1,48 @@
+on: [push]
+
+name: Auto build
+
+jobs:
+  fmt:
+    name: "Run rustfmt and clippy"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: "Install toolchain"
+        run: rustup toolchain install stable --profile minimal -c rustfmt,clippy -t thumbv7m-none-eabi
+      - name: "Install libraries and gcc-arm"
+        run: |
+          sudo apt-get update
+          sudo apt-get install libclang-dev llvm-dev gcc-arm-none-eabi
+      - name: "Check formatting in root"
+        run: cargo fmt --all --check
+      - name: "Check formatting in cross"
+        run: cargo fmt --all --check --manifest-path cross/Cargo.toml
+      - name: "Run clippy in root"
+        run: cargo clippy --no-deps -- -D warnings
+      - name: "Run clippy in cross"
+        run: cd cross && cargo clippy --no-deps -- -D warnings
+
+  test:
+    name: "Run unittests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: "Install toolchain"
+        run: rustup toolchain install stable
+      - name: "Run tests in root"
+        run: cargo test
+
+  stm32f103:
+    name: "Build for STM32F103RB"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: "Install toolchain"
+        run: rustup toolchain install stable -t thumbv7m-none-eabi
+      - name: "Install libraries and gcc-arm"
+        run: |
+          sudo apt-get update
+          sudo apt-get install libclang-dev llvm-dev gcc-arm-none-eabi
+      - name: "Build"
+        run: cd cross && cargo build

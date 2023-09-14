@@ -1,0 +1,22 @@
+[package]
+name = "erust-turret-async"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+#servo = { path = "../../servo" }
+cortex-m = { version = "0.7.6", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7.1"
+critical-section = { version = "1.1.1" }
+embedded-hal = "0.2.7"
+stm32f1xx-hal = { version = "0.10", features = ["stm32f103", "rt", "medium"] }
+
+# panic-halt = "0.2.0"
+panic-probe = { version = "0.3.0", features = ["print-rtt"] }
+rtt-target = "0.4.0"
+
+[[bin]]
+name = "erust-turret-async"
+test = false
+bench = false
+doctest = false
