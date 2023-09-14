@@ -7,7 +7,7 @@ mod system_time;
 
 use system_time::{Duration, Ticker};
 
-use core::cell::Cell;
+use core::cell::{Cell, OnceCell};
 use core::pin::pin;
 use core::sync::atomic::Ordering;
 
@@ -21,27 +21,16 @@ use panic_probe as _;
 // use panic_halt as _;
 
 struct Env {
-    ticker: Cell<Option<Ticker>>,
+    ticker: Ticker,
     current_executor: Cell<Option<&'static dyn Executor>>,
 }
 
-// App is running single thread and interrupt handlers never use environment.
-unsafe impl Sync for Env {}
-
 impl Env {
-    const fn new() -> Self {
+    const fn new(ticker: Ticker) -> Self {
         Self {
-            ticker: Cell::new(None),
+            ticker,
             current_executor: Cell::new(None),
         }
-    }
-
-    fn set_ticker(&self, ticker: Ticker) {
-        self.ticker.set(Some(ticker));
-    }
-
-    fn ticker(&self) -> Ticker {
-        self.ticker.get().expect("ticker not set")
     }
 }
 
@@ -51,13 +40,13 @@ impl Environment for Env {
             if mask.load(Ordering::Acquire) == 0 {
                 // Critical section prevents interrupt handler from updating 'mask' here.
                 // Pending interrupt will wake up CPU and exit critical section.
-                self.ticker().wait_for_tick();
+                self.ticker.wait_for_tick();
             }
         });
     }
 
     fn ticks(&self) -> u32 {
-        self.ticker().get_ticks()
+        self.ticker.get_ticks()
     }
 
     fn enter_executor(&self, executor: &dyn Executor) {
@@ -80,13 +69,25 @@ impl Environment for Env {
     }
 }
 
-async fn print_loop() {
-    rprintln!("iteration");
-
-    sleep(Duration::secs(1).ticks()).await;
+struct EnvHolder {
+    env: OnceCell<Env>,
 }
 
-static ENV: Env = Env::new();
+// App is running single thread and interrupt handlers never use environment.
+unsafe impl Sync for Env {}
+unsafe impl Sync for EnvHolder {}
+
+static ENV: EnvHolder = EnvHolder {
+    env: OnceCell::new(),
+};
+
+async fn print_loop() {
+    loop {
+        rprintln!("iteration");
+
+        sleep(Duration::secs(1).ticks()).await;
+    }
+}
 
 #[entry]
 fn main() -> ! {
@@ -95,9 +96,8 @@ fn main() -> ! {
     let cp = pac::CorePeripherals::take().unwrap();
     let dp = pac::Peripherals::take().unwrap();
     let board = board::Board::new(cp, dp).unwrap();
-    ENV.set_ticker(board.ticker);
 
-    set_environment(&ENV).unwrap();
+    set_environment(ENV.env.get_or_init(|| Env::new(board.ticker))).unwrap();
 
     let mut pinned_loop = pin!(print_loop());
     let task = FutureObj::new(&mut pinned_loop);
