@@ -37,6 +37,7 @@ pub struct Board {
     pub laser_servo: LaserServo,
     pub sensor: Sensor,
     pub sensor_servo: SensorServo,
+    pub adc_ratio: Ratio<u16>,
 }
 
 impl Board {
@@ -130,6 +131,7 @@ impl Board {
             laser_servo,
             sensor,
             sensor_servo,
+            adc_ratio,
         })
     }
 }

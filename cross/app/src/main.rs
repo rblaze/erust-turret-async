@@ -3,15 +3,20 @@
 
 mod board;
 mod error;
+mod ranging;
 mod system_time;
+mod util;
 
+use error::Error;
+use num::rational::Ratio;
 use system_time::{Duration, Ticker};
+use util::sleep;
 
 use core::cell::{Cell, OnceCell};
 use core::pin::pin;
 use core::sync::atomic::Ordering;
 
-use async_scheduler::executor::{set_environment, sleep, Environment, Executor, LocalExecutor};
+use async_scheduler::executor::{set_environment, Environment, Executor, LocalExecutor};
 use cortex_m_rt::entry;
 use futures::task::FutureObj;
 use rtt_target::{rprintln, rtt_init_print};
@@ -81,11 +86,27 @@ static ENV: EnvHolder = EnvHolder {
     env: OnceCell::new(),
 };
 
-async fn print_loop() {
+async fn main_wrapper(
+    servo_scale: Ratio<u16>,
+    sensor: board::Sensor,
+    sensor_servo: board::SensorServo,
+) {
+    async_main(servo_scale, sensor, sensor_servo)
+        .await
+        .expect("error in async_main");
+}
+
+async fn async_main(
+    servo_scale: Ratio<u16>,
+    sensor: board::Sensor,
+    sensor_servo: board::SensorServo,
+) -> Result<(), Error> {
+    let _ranging_baseline = ranging::calibrate(servo_scale, sensor, sensor_servo).await?;
+
     loop {
         rprintln!("iteration");
 
-        sleep(Duration::secs(1).ticks()).await;
+        sleep(Duration::secs(1)).await;
     }
 }
 
@@ -99,8 +120,12 @@ fn main() -> ! {
 
     set_environment(ENV.env.get_or_init(|| Env::new(board.ticker))).unwrap();
 
-    let mut pinned_loop = pin!(print_loop());
-    let task = FutureObj::new(&mut pinned_loop);
+    let mut pinned_main = pin!(main_wrapper(
+        board.adc_ratio,
+        board.sensor,
+        board.sensor_servo
+    ));
+    let task = FutureObj::new(&mut pinned_main);
 
     let mut executor: LocalExecutor = LocalExecutor::new();
     executor.spawn(task).unwrap();

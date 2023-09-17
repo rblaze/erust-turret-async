@@ -6,6 +6,7 @@ use core::num::TryFromIntError;
 pub enum Error {
     Conversion(TryFromIntError),
     InvalidDuration,
+    InvalidScale,
     Sensor(vl53l1x::Error<stm32f1xx_hal::i2c::Error>),
     Servo(servo::Error),
     UnexpectedlyBlocks,
