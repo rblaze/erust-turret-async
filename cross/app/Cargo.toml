@@ -12,6 +12,7 @@ embedded-hal = "0.2"
 fugit = "0.3"
 futures = { version = "0.3", default-features = false }
 stm32f1xx-hal = { version = "0.10", features = ["stm32f103", "rt", "medium"] }
+vl53l1x = { git = "https://github.com/rblaze/erust-VL53L1X.git" }
 
 # panic-halt = "0.2.0"
 panic-probe = { version = "0.3", features = ["print-rtt"] }
