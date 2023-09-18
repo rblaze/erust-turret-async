@@ -5,17 +5,12 @@ use core::num::TryFromIntError;
 #[derive(Debug)]
 pub enum Error {
     Conversion(TryFromIntError),
+    Environment(async_scheduler::executor::EnvError),
     InvalidDuration,
     InvalidScale,
     Sensor(vl53l1x::Error<stm32f1xx_hal::i2c::Error>),
     Servo(servo::Error),
     UnexpectedlyBlocks,
-}
-
-impl From<servo::Error> for Error {
-    fn from(servo_error: servo::Error) -> Self {
-        Error::Servo(servo_error)
-    }
 }
 
 impl From<TryFromIntError> for Error {
@@ -24,9 +19,21 @@ impl From<TryFromIntError> for Error {
     }
 }
 
+impl From<async_scheduler::executor::EnvError> for Error {
+    fn from(error: async_scheduler::executor::EnvError) -> Self {
+        Error::Environment(error)
+    }
+}
+
 impl From<vl53l1x::Error<stm32f1xx_hal::i2c::Error>> for Error {
     fn from(sensor_error: vl53l1x::Error<stm32f1xx_hal::i2c::Error>) -> Self {
         Error::Sensor(sensor_error)
+    }
+}
+
+impl From<servo::Error> for Error {
+    fn from(servo_error: servo::Error) -> Self {
+        Error::Servo(servo_error)
     }
 }
 

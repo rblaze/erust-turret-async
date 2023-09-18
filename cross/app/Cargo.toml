@@ -13,6 +13,9 @@ fugit = "0.3"
 futures = { version = "0.3", default-features = false }
 nb = "1.0"
 num = { version = "0.4", default-features = false }
+once_cell = { version = "1.18", default-features = false, features = [
+    "critical-section",
+] }
 servo = { git = "https://github.com/rblaze/erust-servo.git" }
 stm32f1xx-hal = { version = "0.10", features = ["stm32f103", "rt", "medium"] }
 vl53l1x = { git = "https://github.com/rblaze/erust-VL53L1X.git" }
