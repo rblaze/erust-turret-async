@@ -39,7 +39,7 @@ async fn async_main(
     sensor: board::Sensor,
     sensor_servo: board::SensorServo,
 ) -> Result<(), Error> {
-    let _ranging_baseline = ranging::calibrate(servo_scale, sensor, sensor_servo).await?;
+    let _ranging = ranging::Ranging::calibrate(servo_scale, sensor, sensor_servo).await?;
 
     loop {
         rprintln!("iteration");

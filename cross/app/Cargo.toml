@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 async-scheduler = { git = "https://github.com/rblaze/rust-async-scheduler.git" }
+calibration = { path = "../../calibration" }
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7"
 critical-section = { version = "1.1" }
