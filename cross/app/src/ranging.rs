@@ -21,48 +21,58 @@ const SERVO_RESET_TIME: Duration = Duration::millis(500);
 const SERVO_STEP_TIME: Duration = Duration::millis(100);
 
 pub struct Ranging {
+    sensor: board::Sensor,
+    servo: board::SensorServo,
     total_steps: usize,
     baseline: [u16; MAX_STEPS],
 }
 
 impl Ranging {
-    pub async fn calibrate(
+    pub fn new(
         scale: Ratio<u16>,
-        mut sensor: board::Sensor,
-        mut servo: board::SensorServo,
+        sensor: board::Sensor,
+        servo: board::SensorServo,
     ) -> Result<Self, Error> {
-        sensor.set_timing_budget(TimingBudget::Ms100)?;
-        sensor.set_distance_mode(DistanceMode::Long)?;
-        sensor.set_inter_measurement(SENSOR_INTERMEASURMENT_TIME.convert())?;
-
-        servo.set(Ratio::zero())?;
-        sleep(SERVO_RESET_TIME).await;
-
-        let mut ret = Self {
+        Ok(Self {
+            sensor,
+            servo,
             total_steps: get_num_steps_from_angle_scale(scale)?,
             baseline: [0; MAX_STEPS],
-        };
+        })
+    }
 
-        for step in 0..ret.total_steps {
+    pub async fn calibrate(&mut self) -> Result<(), Error> {
+        self.sensor.set_timing_budget(TimingBudget::Ms100)?;
+        self.sensor.set_distance_mode(DistanceMode::Long)?;
+        self.sensor
+            .set_inter_measurement(SENSOR_INTERMEASURMENT_TIME.convert())?;
+
+        self.servo.set(Ratio::zero())?;
+        sleep(SERVO_RESET_TIME).await;
+
+        for step in 0..self.total_steps {
+            self.servo
+                .set(Ratio::new(step as u16, self.total_steps as u16))?;
+            sleep(SERVO_STEP_TIME).await;
+
             let mut calibration_data = Calibration::new();
 
-            sensor.start_ranging()?;
+            self.sensor.start_ranging()?;
             for _ in 0..NUM_CALIBRATION_SAMPLES {
                 sleep(SENSOR_TIMING_BUDGET).await;
-                while !(sensor.check_for_data_ready()?) {
+                while !(self.sensor.check_for_data_ready()?) {
                     debug_rprintln!("sensor not ready");
                     // Try again shortly
                     sleep(SENSOR_RETRY_TIME).await;
                 }
 
-                let distance = sensor.get_distance()?;
-                sensor.clear_interrupt()?;
+                let distance = self.sensor.get_distance()?;
+                self.sensor.clear_interrupt()?;
 
                 debug_rprintln!("calibration: {}", distance);
                 calibration_data.add_sample(distance);
             }
-            sensor.stop_ranging()?;
-            servo.set(Ratio::new((step + 1) as u16, ret.total_steps as u16))?;
+            self.sensor.stop_ranging()?;
 
             let point = calibration_data.get_point();
 
@@ -74,12 +84,65 @@ impl Ranging {
             };
             debug_rprintln!("point {:?} threshold {}", point, threshold);
 
-            ret.baseline[step] = threshold;
-
-            sleep(SERVO_STEP_TIME).await;
+            self.baseline[step] = threshold;
         }
 
-        Ok(ret)
+        Ok(())
+    }
+
+    /// Scans around with a sensor and sends detection events to targeting.
+    pub async fn scan(&mut self) -> Result<(), Error> {
+        // Servo already should be in this position but let's make sure.
+        self.servo.set(Ratio::one())?;
+        sleep(SERVO_RESET_TIME).await;
+
+        loop {
+            // Scan backward
+            for step in (0..self.total_steps).rev() {
+                self.servo
+                    .set(Ratio::new(step as u16, self.total_steps as u16))?;
+                sleep(SERVO_STEP_TIME).await;
+
+                let distance = self.measure().await?;
+                debug_rprintln!("step {} distance {}", step, distance);
+
+                if distance < self.baseline[step] {
+                    debug_rprintln!("detected");
+                }
+            }
+
+            // Scan forward
+            for step in 0..self.total_steps {
+                self.servo
+                    .set(Ratio::new(step as u16, self.total_steps as u16))?;
+                sleep(SERVO_STEP_TIME).await;
+
+                let distance = self.measure().await?;
+
+                debug_rprintln!("step {} distance {}", step, distance);
+
+                if distance < self.baseline[step] {
+                    debug_rprintln!("detected");
+                }
+            }
+        }
+    }
+
+    async fn measure(&mut self) -> Result<u16, Error> {
+        self.sensor.start_ranging()?;
+        sleep(SENSOR_TIMING_BUDGET).await;
+
+        while !(self.sensor.check_for_data_ready()?) {
+            debug_rprintln!("sensor not ready");
+            // Try again shortly
+            sleep(SENSOR_RETRY_TIME).await;
+        }
+
+        let distance = self.sensor.get_distance()?;
+        self.sensor.clear_interrupt()?;
+        self.sensor.stop_ranging()?;
+
+        Ok(distance)
     }
 }
 

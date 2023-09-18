@@ -8,17 +8,15 @@ mod ranging;
 mod system_time;
 mod util;
 
-use error::Error;
-use num::rational::Ratio;
-use system_time::Duration;
-use util::sleep;
+use crate::error::Error;
 
 use core::pin::pin;
 
 use async_scheduler::executor::LocalExecutor;
 use cortex_m_rt::entry;
-use futures::task::FutureObj;
-use rtt_target::{rprintln, rtt_init_print};
+use futures::task::LocalFutureObj;
+use num::rational::Ratio;
+use rtt_target::rtt_init_print;
 use stm32f1xx_hal::pac;
 
 use panic_probe as _;
@@ -39,13 +37,11 @@ async fn async_main(
     sensor: board::Sensor,
     sensor_servo: board::SensorServo,
 ) -> Result<(), Error> {
-    let _ranging = ranging::Ranging::calibrate(servo_scale, sensor, sensor_servo).await?;
+    let mut ranging = ranging::Ranging::new(servo_scale, sensor, sensor_servo)?;
+    ranging.calibrate().await?;
+    ranging.scan().await?;
 
-    loop {
-        rprintln!("iteration");
-
-        sleep(Duration::secs(1)).await;
-    }
+    Ok(())
 }
 
 #[entry]
@@ -63,7 +59,7 @@ fn main() -> ! {
         board.sensor,
         board.sensor_servo
     ));
-    let task = FutureObj::new(&mut pinned_main);
+    let task = LocalFutureObj::new(&mut pinned_main);
 
     let mut executor: LocalExecutor = LocalExecutor::new();
     executor.spawn(task).unwrap();
