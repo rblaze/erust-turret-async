@@ -31,7 +31,10 @@ impl Env {
 
 impl Environment for Env {
     fn sleep_if_zero(&self, mask: &core::sync::atomic::AtomicU32) {
-        assert!(in_thread_mode(), "calling sleep_if_zero() in interrupt handler");
+        assert!(
+            in_thread_mode(),
+            "calling sleep_if_zero() in interrupt handler"
+        );
 
         critical_section::with(|_| {
             if mask.load(Ordering::Acquire) == 0 {
@@ -47,15 +50,24 @@ impl Environment for Env {
     }
 
     fn enter_executor(&self, executor: &dyn Executor) {
-        assert!(in_thread_mode(), "calling enter_executor() in interrupt handler");
-        assert!(self.current_executor.get().is_none(), "double-entering executor");
+        assert!(
+            in_thread_mode(),
+            "calling enter_executor() in interrupt handler"
+        );
+        assert!(
+            self.current_executor.get().is_none(),
+            "double-entering executor"
+        );
 
         let r = unsafe { core::mem::transmute::<&dyn Executor, &'static dyn Executor>(executor) };
         self.current_executor.set(Some(r));
     }
 
     fn leave_executor(&self) {
-        assert!(in_thread_mode(), "calling leave_executor() in interrupt handler");
+        assert!(
+            in_thread_mode(),
+            "calling leave_executor() in interrupt handler"
+        );
 
         self.current_executor
             .replace(None)
@@ -63,7 +75,10 @@ impl Environment for Env {
     }
 
     fn current_executor(&self) -> Option<&dyn Executor> {
-        assert!(in_thread_mode(), "calling current_executor() in interrupt handler");
+        assert!(
+            in_thread_mode(),
+            "calling current_executor() in interrupt handler"
+        );
 
         self.current_executor.get()
     }
