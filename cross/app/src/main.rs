@@ -22,16 +22,6 @@ use stm32f1xx_hal::pac;
 use panic_probe as _;
 // use panic_halt as _;
 
-async fn main_wrapper(
-    servo_scale: Ratio<u16>,
-    sensor: board::Sensor,
-    sensor_servo: board::SensorServo,
-) {
-    async_main(servo_scale, sensor, sensor_servo)
-        .await
-        .expect("error in async_main");
-}
-
 async fn async_main(
     servo_scale: Ratio<u16>,
     sensor: board::Sensor,
@@ -54,15 +44,14 @@ fn main() -> ! {
 
     env::init_env(board.ticker).unwrap();
 
-    let mut pinned_main = pin!(main_wrapper(
-        board.adc_ratio,
-        board.sensor,
-        board.sensor_servo
-    ));
-    let task = LocalFutureObj::new(&mut pinned_main);
+    let main = pin!(async {
+        async_main(board.adc_ratio, board.sensor, board.sensor_servo)
+            .await
+            .expect("error in async_main");
+    });
 
     let mut executor: LocalExecutor = LocalExecutor::new();
-    executor.spawn(task).unwrap();
+    executor.spawn(LocalFutureObj::new(main)).unwrap();
 
     executor.run();
 
