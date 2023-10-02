@@ -46,7 +46,7 @@ pub type AudioEnable = PA4<Output<PushPull>>;
 pub type AudioPwmPin = PB0<Alternate<PushPull>>;
 pub type AudioDma = dma1::C2;
 pub type AudioPwm = Pwm<TIM3, Tim3NoRemap, Ch<2>, AudioPwmPin, CLOCK_FREQ>;
-pub type AudioClock = CounterHz<stm32f1xx_hal::pac::TIM2>;
+pub type AudioClock = CounterHz<pac::TIM2>;
 
 pub struct Board {
     pub ticker: Ticker,
@@ -162,17 +162,13 @@ impl Board {
         );
 
         // Setup TIM2 as DMA driver
-        // Create timer to enable it, then release to get access to registers.
-        // let tim2 = dp.TIM2.counter_hz(&clocks).release().release();
-        // Set bit 8 (UDE, Update DMA Request Enable) in DIER (DMA/Interrupt Enable Register).
-        // Every time timer expires and generates Update event, it also triggers DMA request.
-        // tim2.dier.write(|w| w.ude().set_bit());
-        // Recreate timer
-        // let audio_clock = tim2.counter_hz(&clocks);
+        let audio_clock = dp.TIM2.counter_hz(&clocks);
 
-        // Alternative implementation:
-        let mut audio_clock = dp.TIM2.counter_hz(&clocks);
-        audio_clock.listen(unsafe { stm32f1xx_hal::timer::Event::from_bits_unchecked(1 << 8) });
+        unsafe {
+            // Set bit 8 (UDE, Update DMA Request Enable) in DIER (DMA/Interrupt Enable Register).
+            // Every time timer expires and generates Update event, it also triggers DMA request.
+            (*pac::TIM2::ptr()).dier.write(|w| w.ude().set_bit());
+        }
 
         // Setup audio DMA
         let dma1 = dp.DMA1.split();
@@ -192,9 +188,11 @@ impl Board {
             .dir().set_bit()
         });
 
+        // Trigger interrupt when entire block is sent to PWM input.
         audio_dma.listen(stm32f1xx_hal::dma::Event::TransferComplete);
 
         unsafe {
+            // Enable DMA interrupt.
             cortex_m::peripheral::NVIC::unmask(pac::Interrupt::DMA1_CHANNEL2);
         }
 

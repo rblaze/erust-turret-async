@@ -107,28 +107,22 @@ impl AudioImpl<'_> {
 
         self.start_playback()?;
 
-        {
+        let playback_result: Result<(), Error> = {
             while next_buffer_len > 0 {
+                // Start playing buffer
                 self.play_buffer(&buffers[next_play_buffer][0..next_buffer_len])?;
-                next_play_buffer = (next_play_buffer + 1) % 2;
 
+                // Load next buffer
+                next_play_buffer = (next_play_buffer + 1) % 2;
                 next_buffer_len = file.read(&mut buffers[next_play_buffer])?;
 
                 // Wait until buffer completed
                 BUFFER_DONE.read().await?;
             }
             Ok(())
-        }
-        .map_err(|err: Error| {
-            self.end_playback().unwrap();
-            err
-        })?;
+        };
 
-        debug_rprintln!("Finished playing");
-
-        self.end_playback()?;
-
-        Ok(())
+        self.end_playback().and(playback_result)
     }
 
     fn start_playback(&mut self) -> Result<(), Error> {
