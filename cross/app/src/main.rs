@@ -1,10 +1,12 @@
 #![no_std]
 #![no_main]
 
+mod audio;
 mod board;
 mod env;
 mod error;
 mod ranging;
+mod storage;
 mod system_time;
 mod util;
 
@@ -15,45 +17,53 @@ use core::pin::pin;
 use async_scheduler::executor::LocalExecutor;
 use cortex_m_rt::entry;
 use futures::task::LocalFutureObj;
-use num::rational::Ratio;
 use rtt_target::rtt_init_print;
 use stm32f1xx_hal::pac;
 
 use panic_probe as _;
 // use panic_halt as _;
 
-async fn async_main(
-    servo_scale: Ratio<u16>,
-    sensor: board::Sensor,
-    sensor_servo: board::SensorServo,
-) -> Result<(), Error> {
-    let mut ranging = ranging::Ranging::new(servo_scale, sensor, sensor_servo)?;
-    ranging.calibrate().await?;
-    ranging.scan().await?;
-
-    Ok(())
+async fn panic_if_exited<F: core::future::Future<Output = Result<(), Error>>>(f: F) {
+    f.await.expect("error in task");
+    unreachable!()
 }
 
 #[entry]
 fn main() -> ! {
-    rtt_init_print!();
+    move || -> Result<_, Error> {
+        rtt_init_print!();
 
-    let cp = pac::CorePeripherals::take().unwrap();
-    let dp = pac::Peripherals::take().unwrap();
-    let board = board::Board::new(cp, dp).unwrap();
+        let cp = pac::CorePeripherals::take().ok_or(Error::AlreadyTaken)?;
+        let dp = pac::Peripherals::take().ok_or(Error::AlreadyTaken)?;
+        let board = board::Board::new(cp, dp)?;
 
-    env::init_env(board.ticker).unwrap();
+        let audio = audio::Audio::new();
+        let mut ranging =
+            ranging::Ranging::new(&audio, board.adc_ratio, board.sensor, board.sensor_servo)?;
 
-    let main = pin!(async {
-        async_main(board.adc_ratio, board.sensor, board.sensor_servo)
-            .await
-            .expect("error in async_main");
-    });
+        env::init_env(board.ticker)?;
 
-    let mut executor: LocalExecutor = LocalExecutor::new();
-    executor.spawn(LocalFutureObj::new(main)).unwrap();
+        let audio_task = pin!(panic_if_exited(audio.task(
+            board.storage,
+            board.audio_enable,
+            board.audio_pwm,
+            board.audio_clock,
+            board.audio_dma,
+            board.random,
+        )));
 
-    executor.run();
+        let ranging_task = pin!(panic_if_exited(async {
+            ranging.calibrate().await?;
+            ranging.scan().await?;
+            unreachable!()
+        }));
 
-    panic!("unexpected exit from executor.run()")
+        let mut executor: LocalExecutor<2> = LocalExecutor::new();
+        executor.spawn(LocalFutureObj::new(audio_task))?;
+        executor.spawn(LocalFutureObj::new(ranging_task))?;
+
+        executor.run();
+        unreachable!()
+    }()
+    .expect("error in main")
 }
