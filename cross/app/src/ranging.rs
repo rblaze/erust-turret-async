@@ -82,6 +82,14 @@ impl TargetState {
         }
     }
 
+    fn has_lock(&self) -> bool {
+        match self {
+            TargetState::NoContact => false,
+            TargetState::EarlyContact { .. } => false,
+            TargetState::Lock { .. } => true,
+        }
+    }
+
     fn midrange(&self) -> Option<u16> {
         match self {
             TargetState::NoContact => None,
@@ -223,7 +231,7 @@ impl<'a> Ranging<'a> {
     }
 
     async fn scan_step(&mut self, state: TargetState, step: u16) -> Result<TargetState, Error> {
-        let had_lock = state.midrange().is_some();
+        let had_lock = state.has_lock();
 
         self.sensor_servo.set(Ratio::new(step, self.total_steps))?;
         sleep(SERVO_STEP_TIME).await;
@@ -233,6 +241,7 @@ impl<'a> Ranging<'a> {
         let detected = distance < self.baseline[step as usize];
         debug_rprintln!("step {} distance {} {}", step, distance, detected);
 
+        let now = self.ticker.now();
         let new_state;
 
         if detected {
@@ -241,8 +250,6 @@ impl<'a> Ranging<'a> {
             new_state = state.report_contact(step);
 
             if let Some(laser_position) = new_state.midrange() {
-                let now = self.ticker.now();
-
                 self.laser_servo
                     .set(Ratio::new(laser_position, self.total_steps))?;
                 self.laser.set_high();
@@ -251,7 +258,7 @@ impl<'a> Ranging<'a> {
 
                 if !had_lock {
                     // Switching from no-lock to lock
-                    let sound = if now - self.last_lock_time >= TARGET_ACQUIRED_INTERVAL {
+                                        let sound = if now - self.last_lock_time >= TARGET_ACQUIRED_INTERVAL {
                         Sound::TargetAcquired
                     } else {
                         Sound::ContactRestored
@@ -263,9 +270,13 @@ impl<'a> Ranging<'a> {
         } else {
             self.target_lock_led.set_low();
             new_state = state.report_no_contact(step);
+            if had_lock && !new_state.has_lock() {
+                // Switching from lock to no-lock
+                self.last_lock_time = now;
+            }
         }
 
-        self.check_times();
+        self.check_times(now);
         Ok(new_state)
     }
 
@@ -286,9 +297,7 @@ impl<'a> Ranging<'a> {
         Ok(distance)
     }
 
-    fn check_times(&mut self) {
-        let now = self.ticker.now();
-
+    fn check_times(&mut self, now: Instant) {
         if self.laser_off_time.is_some_and(|t| t < now) {
             self.laser_off_time = None;
             self.target_lost_time = Some(now + TARGET_LOST_DELAY);

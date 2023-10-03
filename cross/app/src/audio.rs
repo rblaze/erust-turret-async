@@ -48,53 +48,89 @@ impl Audio {
         audio_dma: AudioDma,
         random: Rng,
     ) -> Result<(), Error> {
-        let mut audio_impl = AudioImpl {
+        let mut audio_impl = AudioInternal {
             mailbox: &self.mailbox,
             audio_enable,
             audio_pwm,
             audio_clock,
             audio_dma,
             random,
+            startup_clips: ClipList::new(STARTUP_CLIPS),
+            begin_scan_clips: ClipList::new(BEGIN_SCAN_CLIPS),
+            target_acquired_clips: ClipList::new(TARGET_ACQUIRED_CLIPS),
+            contact_lost_clips: ClipList::new(CONTACT_LOST_CLIPS),
+            contact_restored_clips: ClipList::new(CONTACT_RESTORED_CLIPS),
+            target_lost_clips: ClipList::new(TARGET_LOST_CLIPS),
+            picked_up_clips: ClipList::new(PICKED_UP_CLIPS),
         };
 
         audio_impl.task(storage).await
     }
 }
 
-struct AudioImpl<'a> {
+// Keeps a list of clips and shuffles it after all had been played.
+// It avoids long sequences of the same sound being played as opposed
+// to picking a clip at random.
+#[derive(Debug)]
+struct ClipList<const N: usize> {
+    clips: [Clip; N],
+    current_clip: usize,
+}
+
+impl<const N: usize> ClipList<N> {
+    fn new(clips: [Clip; N]) -> Self {
+        Self {
+            clips,
+            current_clip: N - 1,
+        }
+    }
+
+    fn pick(&mut self, random: &mut Rng) -> Clip {
+        if self.current_clip == N - 1 {
+            random.shuffle(&mut self.clips);
+            self.current_clip = 0;
+        } else {
+            self.current_clip += 1;
+        }
+
+        self.clips[self.current_clip]
+    }
+}
+
+struct AudioInternal<'a> {
     mailbox: &'a async_scheduler::mailbox::Mailbox<Sound>,
     audio_enable: AudioEnable,
     audio_pwm: AudioPwm,
     audio_clock: AudioClock,
     audio_dma: AudioDma,
     random: Rng,
+    startup_clips: ClipList<2>,
+    begin_scan_clips: ClipList<5>,
+    target_acquired_clips: ClipList<6>,
+    contact_lost_clips: ClipList<1>,
+    contact_restored_clips: ClipList<3>,
+    target_lost_clips: ClipList<4>,
+    picked_up_clips: ClipList<4>,
 }
 
-impl AudioImpl<'_> {
+impl AudioInternal<'_> {
     pub async fn task(&mut self, storage: Storage) -> Result<(), Error> {
         let fs = FileSystem::mount(storage)?;
 
         loop {
             let sound = self.mailbox.read().await?;
-            let clips = match sound {
-                Sound::Startup => STARTUP_CLIPS,
-                Sound::BeginScan => BEGIN_SCAN_CLIPS,
-                Sound::TargetAcquired => TARGET_ACQUIRED_CLIPS,
-                Sound::ContactLost => CONTACT_LOST_CLIPS,
-                Sound::ContactRestored => CONTACT_RESTORED_CLIPS,
-                Sound::TargetLost => TARGET_LOST_CLIPS,
-                Sound::PickedUp => PICKED_UP_CLIPS,
+            let clip = match sound {
+                Sound::Startup => self.startup_clips.pick(&mut self.random),
+                Sound::BeginScan => self.begin_scan_clips.pick(&mut self.random),
+                Sound::TargetAcquired => self.target_acquired_clips.pick(&mut self.random),
+                Sound::ContactLost => self.contact_lost_clips.pick(&mut self.random),
+                Sound::ContactRestored => self.contact_restored_clips.pick(&mut self.random),
+                Sound::TargetLost => self.target_lost_clips.pick(&mut self.random),
+                Sound::PickedUp => self.picked_up_clips.pick(&mut self.random),
             };
-            let clip = self.pick_clip(clips);
+
             self.play_clip(&fs, clip).await?;
         }
-    }
-
-    fn pick_clip(&mut self, clips: &[Clip]) -> Clip {
-        // TODO use random shuffle for each clip set.
-        // This will provide more diverse clips for short runs.
-        let index = self.random.usize(0..clips.len());
-        clips[index]
     }
 
     async fn play_clip(&mut self, fs: &FileSystem<Storage>, clip: Clip) -> Result<(), Error> {
@@ -199,15 +235,15 @@ impl Clip {
     }
 }
 
-const STARTUP_CLIPS: &[Clip] = &[Clip::SfxDeploy, Clip::SfxActive];
-const BEGIN_SCAN_CLIPS: &[Clip] = &[
+const STARTUP_CLIPS: [Clip; 2] = [Clip::SfxDeploy, Clip::SfxActive];
+const BEGIN_SCAN_CLIPS: [Clip; 5] = [
     Clip::Searching,
     Clip::Activated,
     Clip::SentryModeActivated,
     Clip::CouldYouComeOverHere,
     Clip::Deploying,
 ];
-const TARGET_ACQUIRED_CLIPS: &[Clip] = &[
+const TARGET_ACQUIRED_CLIPS: [Clip; 6] = [
     Clip::HelloFriend,
     Clip::WhoIsThere,
     Clip::TargetAcquired,
@@ -215,15 +251,15 @@ const TARGET_ACQUIRED_CLIPS: &[Clip] = &[
     Clip::ISeeYou,
     Clip::ThereYouAre,
 ];
-const CONTACT_LOST_CLIPS: &[Clip] = &[Clip::SfxRetract];
-const CONTACT_RESTORED_CLIPS: &[Clip] = &[Clip::SfxPing, Clip::Hi, Clip::SfxAlert];
-const TARGET_LOST_CLIPS: &[Clip] = &[
+const CONTACT_LOST_CLIPS: [Clip; 1] = [Clip::SfxRetract];
+const CONTACT_RESTORED_CLIPS: [Clip; 3] = [Clip::SfxPing, Clip::Hi, Clip::SfxAlert];
+const TARGET_LOST_CLIPS: [Clip; 4] = [
     Clip::IsAnyoneThere,
     Clip::Hellooooo,
     Clip::AreYouStillThere,
     Clip::TargetLost,
 ];
-const PICKED_UP_CLIPS: &[Clip] = &[
+const PICKED_UP_CLIPS: [Clip; 4] = [
     Clip::Malfunctioning,
     Clip::PutMeDown,
     Clip::WhoAreYou,
