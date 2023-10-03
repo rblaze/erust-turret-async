@@ -258,7 +258,7 @@ impl<'a> Ranging<'a> {
 
                 if !had_lock {
                     // Switching from no-lock to lock
-                                        let sound = if now - self.last_lock_time >= TARGET_ACQUIRED_INTERVAL {
+                    let sound = if now - self.last_lock_time >= TARGET_ACQUIRED_INTERVAL {
                         Sound::TargetAcquired
                     } else {
                         Sound::ContactRestored
