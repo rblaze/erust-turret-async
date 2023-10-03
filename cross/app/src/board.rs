@@ -10,8 +10,8 @@ use servo::{Bounds, Servo};
 use stm32f1xx_hal::adc::Adc;
 use stm32f1xx_hal::device::{SPI2, TIM3};
 use stm32f1xx_hal::dma::dma1;
-use stm32f1xx_hal::gpio::{Alternate, Floating, Input, OpenDrain, Output, PushPull};
-use stm32f1xx_hal::gpio::{PA4, PA8, PA9, PB0, PB12, PB13, PB14, PB15, PB6, PB7};
+use stm32f1xx_hal::gpio::{Alternate, Floating, Input, OpenDrain, Output, PullDown, PushPull};
+use stm32f1xx_hal::gpio::{PA4, PA5, PA8, PA9, PB0, PB12, PB13, PB14, PB15, PB3, PB5, PB6, PB7};
 use stm32f1xx_hal::i2c::{BlockingI2c, I2c, Mode};
 use stm32f1xx_hal::pac;
 use stm32f1xx_hal::prelude::*;
@@ -34,7 +34,11 @@ pub type LaserServoPin = PA9<Alternate<PushPull>>;
 
 pub type Sensor = VL53L1X<I2cBus>;
 pub type SensorServo = Servo<PwmChannel<pac::TIM1, 0>>;
+pub type Laser = PA5<Output<PushPull>>;
 pub type LaserServo = Servo<PwmChannel<pac::TIM1, 1>>;
+
+pub type Led = PB3<Output<PushPull>>;
+pub type Button = PB5<Input<PullDown>>;
 
 pub type SpiCs = PB12<Output<PushPull>>;
 pub type SpiClk = PB13<Alternate<PushPull>>;
@@ -50,9 +54,12 @@ pub type AudioClock = CounterHz<pac::TIM2>;
 
 pub struct Board {
     pub ticker: Ticker,
+    pub laser_led: Laser,
     pub laser_servo: LaserServo,
     pub sensor: Sensor,
     pub sensor_servo: SensorServo,
+    pub target_lock_led: Led,
+    pub button: Button,
     pub adc_ratio: Ratio<u16>,
     pub audio_enable: AudioEnable,
     pub audio_dma: AudioDma,
@@ -97,6 +104,13 @@ impl Board {
         // Avoid too small range
         let adc_value = adc_reading.max(adc_max / 10);
         let adc_ratio = Ratio::new(adc_value, adc_max);
+
+        // Disable JTAG to get PB3 (mistake in board design)
+        let (_, pb3, _) = afio.mapr.disable_jtag(gpioa.pa15, gpiob.pb3, gpiob.pb4);
+
+        let target_lock_led = pb3.into_push_pull_output(&mut gpiob.crl);
+        let button = gpiob.pb5.into_pull_down_input(&mut gpiob.crl);
+        let laser_led = gpioa.pa5.into_push_pull_output(&mut gpioa.crl);
 
         // Configure servos.
         let sensor_servo_pin: SensorServoPin = gpioa.pa8.into_alternate_push_pull(&mut gpioa.crh);
@@ -217,9 +231,12 @@ impl Board {
 
         Ok(Board {
             ticker,
+            laser_led,
             laser_servo,
             sensor,
             sensor_servo,
+            target_lock_led,
+            button,
             adc_ratio,
             audio_enable,
             audio_dma,

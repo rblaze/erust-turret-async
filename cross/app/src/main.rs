@@ -38,8 +38,16 @@ fn main() -> ! {
         let board = board::Board::new(cp, dp)?;
 
         let audio = audio::Audio::new();
-        let mut ranging =
-            ranging::Ranging::new(&audio, board.adc_ratio, board.sensor, board.sensor_servo)?;
+        let mut ranging = ranging::Ranging::new(
+            &audio,
+            board.ticker,
+            board.adc_ratio,
+            board.sensor,
+            board.sensor_servo,
+            board.laser_led,
+            board.laser_servo,
+            board.target_lock_led,
+        )?;
 
         env::init_env(board.ticker)?;
 
