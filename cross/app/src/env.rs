@@ -30,7 +30,7 @@ impl Env {
 }
 
 impl Environment for Env {
-    fn sleep_if_zero(&self, mask: &core::sync::atomic::AtomicU32) {
+    fn sleep_if_zero(&self, mask: &portable_atomic::AtomicU32) {
         assert!(
             in_thread_mode(),
             "calling sleep_if_zero() in interrupt handler"

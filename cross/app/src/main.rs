@@ -66,11 +66,10 @@ fn main() -> ! {
             unreachable!()
         }));
 
-        let mut executor: LocalExecutor<2> = LocalExecutor::new();
-        executor.spawn(LocalFutureObj::new(audio_task))?;
-        executor.spawn(LocalFutureObj::new(ranging_task))?;
-
-        executor.run();
+        LocalExecutor::new().run([
+            LocalFutureObj::new(audio_task),
+            LocalFutureObj::new(ranging_task),
+        ]);
         unreachable!()
     }()
     .expect("error in main")

@@ -18,6 +18,7 @@ num = { version = "0.4", default-features = false }
 once_cell = { version = "1.18", default-features = false, features = [
     "critical-section",
 ] }
+portable-atomic = { version = "1", default-features = false }
 servo = { git = "https://github.com/rblaze/erust-servo.git" }
 simplefs = { git = "https://github.com/rblaze/rust-simplefs.git" }
 spi-memory = "0.2"
