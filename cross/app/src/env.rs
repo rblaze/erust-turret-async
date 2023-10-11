@@ -30,7 +30,7 @@ impl Env {
 }
 
 impl Environment for Env {
-    fn sleep_if_zero(&self, mask: &portable_atomic::AtomicU32) {
+    fn wait_for_event_with_timeout(&self, mask: &portable_atomic::AtomicU32, _tick: Option<u32>) {
         assert!(
             in_thread_mode(),
             "calling sleep_if_zero() in interrupt handler"
